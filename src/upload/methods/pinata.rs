@@ -105,6 +105,10 @@ impl Prepare for PinataMethod {
                         let path = Path::new(&item.image);
                         fs::metadata(path)?.len()
                     }
+                    DataType::AdditionalImage => {
+                        let path = Path::new(&item.additional_image);
+                        fs::metadata(path)?.len()
+                    }
                     DataType::Animation => {
                         if let Some(animation) = &item.animation {
                             let path = Path::new(animation);
@@ -121,9 +125,14 @@ impl Prepare for PinataMethod {
                             None
                         };
 
-                        get_updated_metadata(&item.metadata, &mock_uri.clone(), &animation)?
-                            .into_bytes()
-                            .len() as u64
+                        get_updated_metadata(
+                            &item.metadata,
+                            &mock_uri.clone(),
+                            &mock_uri.clone(),
+                            &animation,
+                        )?
+                        .into_bytes()
+                        .len() as u64
                     }
                 };
 
@@ -156,6 +165,7 @@ impl Config {
     async fn send(&self, asset_info: AssetInfo) -> Result<(String, String)> {
         let data = match asset_info.data_type {
             DataType::Image => fs::read(&asset_info.content)?,
+            DataType::AdditionalImage => fs::read(&asset_info.content)?,
             DataType::Metadata => asset_info.content.into_bytes(),
             DataType::Animation => fs::read(&asset_info.content)?,
         };

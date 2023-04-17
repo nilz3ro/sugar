@@ -219,6 +219,7 @@ impl<T: ParallelUploader> Uploader for T {
                         let item = cache.items.0.get_mut(&val.0).unwrap();
                         match data_type {
                             DataType::Image => item.image_link = link,
+                            DataType::AdditionalImage => item.additional_image_link = link,
                             DataType::Metadata => item.metadata_link = link,
                             DataType::Animation => item.animation_link = Some(link),
                         }

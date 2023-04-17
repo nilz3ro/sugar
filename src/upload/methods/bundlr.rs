@@ -180,6 +180,7 @@ impl BundlrMethod {
     ) -> Result<(String, String)> {
         let data = match asset_info.data_type {
             DataType::Image => fs::read(&asset_info.content)?,
+            DataType::AdditionalImage => fs::read(&asset_info.content)?,
             DataType::Metadata => asset_info.content.into_bytes(),
             DataType::Animation => fs::read(&asset_info.content)?,
         };
@@ -205,7 +206,9 @@ impl BundlrMethod {
             .ok_or_else(|| anyhow!("Failed context type to get extension"))?;
 
         let link = match asset_info.data_type {
-            DataType::Image | DataType::Animation => format!("https://arweave.net/{id}?ext={ext}"),
+            DataType::Image | DataType::AdditionalImage | DataType::Animation => {
+                format!("https://arweave.net/{id}?ext={ext}")
+            }
             DataType::Metadata => format!("https://arweave.net/{id}"),
         };
 
@@ -230,6 +233,14 @@ impl Prepare for BundlrMethod {
                     for index in indices {
                         let item = assets.get(index).unwrap();
                         let path = Path::new(&item.image);
+                        total_size +=
+                            HEADER_SIZE + cmp::max(MINIMUM_SIZE, fs::metadata(path)?.len());
+                    }
+                }
+                DataType::AdditionalImage => {
+                    for index in indices {
+                        let item = assets.get(index).unwrap();
+                        let path = Path::new(&item.additional_image);
                         total_size +=
                             HEADER_SIZE + cmp::max(MINIMUM_SIZE, fs::metadata(path)?.len());
                     }
@@ -259,9 +270,14 @@ impl Prepare for BundlrMethod {
                         total_size += HEADER_SIZE
                             + cmp::max(
                                 MINIMUM_SIZE,
-                                get_updated_metadata(&item.metadata, &mock_uri.clone(), &animation)?
-                                    .into_bytes()
-                                    .len() as u64,
+                                get_updated_metadata(
+                                    &item.metadata,
+                                    &mock_uri.clone(),
+                                    &mock_uri.clone(),
+                                    &animation,
+                                )?
+                                .into_bytes()
+                                .len() as u64,
                             );
                     }
                 }

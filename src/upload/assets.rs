@@ -16,6 +16,7 @@ use crate::{common::*, validate::format::Metadata};
 #[derive(Debug, Clone)]
 pub enum DataType {
     Image,
+    AdditionalImage,
     Metadata,
     Animation,
 }
@@ -27,6 +28,8 @@ pub struct AssetPair {
     pub metadata_hash: String,
     pub image: String,
     pub image_hash: String,
+    pub additional_image: String,
+    pub additional_image_hash: String,
     pub animation: Option<String>,
     pub animation_hash: Option<String>,
 }
@@ -37,6 +40,8 @@ impl AssetPair {
             name: self.name,
             image_hash: self.image_hash,
             image_link: String::new(),
+            additional_image_hash: self.additional_image_hash,
+            additional_image_link: String::new(),
             metadata_hash: self.metadata_hash,
             metadata_link: String::new(),
             on_chain: false,
@@ -171,7 +176,7 @@ pub fn get_asset_pairs(assets_dir: &str) -> Result<HashMap<isize, AssetPair>> {
             return Err(error);
         };
 
-        let img_pattern = format!("^{}\\.((jpg)|(jpeg)|(gif)|(png))$", i);
+        let img_pattern = format!("^{}\\.((jpg)|(jpeg)|(gif))$", i);
 
         let img_regex = RegexBuilder::new(&img_pattern)
             .case_insensitive(true)
@@ -199,6 +204,37 @@ pub fn get_asset_pairs(assets_dir: &str) -> Result<HashMap<isize, AssetPair>> {
             &img_filenames[0]
         };
 
+        let additional_img_pattern = format!("^{}\\.((png))$", i);
+        let additional_img_regex = RegexBuilder::new(&additional_img_pattern)
+            .case_insensitive(true)
+            .build()
+            .expect("Failed to create regex.");
+
+        let additional_img_filenames = paths_ref
+            .clone()
+            .into_iter()
+            .filter(|p| additional_img_regex.is_match(p))
+            .collect::<Vec<String>>();
+
+        let additional_img_filename = if is_collection_index {
+            img_filename
+        } else {
+            &additional_img_filenames[0]
+        };
+        // let additional_img_filename = if additional_img_filenames.len() != 1 {
+        //     let error = if is_collection_index {
+        //         anyhow!("Couldn't find the collection image filename.")
+        //     } else {
+        //         anyhow!(
+        //             "Couldn't find an image filename at index {}.",
+        //             i.parse::<isize>().unwrap()
+        //         )
+        //     };
+        //     error!("{:?}", error);
+        //     return Err(error);
+        // } else {
+        //     &additional_img_filenames[0]
+        // };
         // need a similar check for animation as above, this one checking if there is animation
         // on specific index
 
@@ -232,6 +268,12 @@ pub fn get_asset_pairs(assets_dir: &str) -> Result<HashMap<isize, AssetPair>> {
             .expect("Failed to convert image path from unicode.")
             .to_string();
 
+        let additional_img_filepath = Path::new(assets_dir)
+            .join(additional_img_filename)
+            .to_str()
+            .expect("Failed to convert image path from unicode.")
+            .to_string();
+
         let animation_filename = if animation_filenames.len() == 1 {
             let animation_filepath = Path::new(assets_dir)
                 .join(&animation_filenames[0])
@@ -257,6 +299,8 @@ pub fn get_asset_pairs(assets_dir: &str) -> Result<HashMap<isize, AssetPair>> {
             metadata_hash: encode(&metadata_filepath)?,
             image: img_filepath.clone(),
             image_hash: encode(&img_filepath)?,
+            additional_image: additional_img_filepath.clone(),
+            additional_image_hash: encode(&additional_img_filepath)?,
             animation_hash,
             animation: animation_filename,
         };
@@ -319,6 +363,7 @@ fn ensure_sequential_files(metadata_filenames: Vec<String>) -> Result<()> {
 pub fn get_updated_metadata(
     metadata_file: &str,
     image_link: &str,
+    additional_image_link: &str,
     animation_link: &Option<String>,
 ) -> Result<String> {
     let mut metadata: Metadata = {
@@ -334,6 +379,8 @@ pub fn get_updated_metadata(
     for file in &mut metadata.properties.files {
         if file.uri.eq(&metadata.image) {
             file.uri = image_link.to_string();
+        } else {
+            file.uri = additional_image_link.to_string();
         }
         if let Some(ref animation_link) = animation_link {
             if let Some(ref animation_url) = metadata.animation_url {

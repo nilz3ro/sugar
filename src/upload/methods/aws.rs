@@ -89,6 +89,7 @@ impl AWSMethod {
     ) -> Result<(String, String)> {
         let data = match asset_info.data_type {
             DataType::Image => fs::read(&asset_info.content)?,
+            DataType::AdditionalImage => fs::read(&asset_info.content)?,
             DataType::Metadata => asset_info.content.into_bytes(),
             DataType::Animation => fs::read(&asset_info.content)?,
         };

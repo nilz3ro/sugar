@@ -32,6 +32,7 @@ pub struct UploadArgs {
 
 pub struct AssetType {
     pub image: Vec<isize>,
+    pub additional_image: Vec<isize>,
     pub metadata: Vec<isize>,
     pub animation: Vec<isize>,
 }
@@ -61,6 +62,7 @@ pub async fn process_upload(args: UploadArgs) -> Result<()> {
     // list of indices to upload
     let mut indices = AssetType {
         image: Vec::new(),
+        additional_image: Vec::new(),
         metadata: Vec::new(),
         animation: Vec::new(),
     };
@@ -91,6 +93,20 @@ pub async fn process_upload(args: UploadArgs) -> Result<()> {
             String::new()
         };
 
+        // let additional_file = &m.properties.files[1];
+        let existing_additional_image = {
+            match m.properties.files.get(1) {
+                Some(additional_file) => {
+                    if is_complete_uri(&additional_file.uri) {
+                        additional_file.uri.clone()
+                    } else {
+                        String::new()
+                    }
+                }
+                None => String::new(),
+            }
+        };
+
         // retrieve the existing animation uri from the metadata
         let existing_animation = match m.animation_url {
             Some(ref url) => {
@@ -109,6 +125,11 @@ pub async fn process_upload(args: UploadArgs) -> Result<()> {
                     || item.image_link.is_empty())
                     && existing_image.is_empty();
 
+                let additional_image_changed =
+                    (!item.additional_image_hash.eq(&pair.additional_image_hash)
+                        || item.additional_image_link.is_empty())
+                        && existing_image.is_empty();
+
                 let animation_changed = (!item.animation_hash.eq(&pair.animation_hash)
                     || (item.animation_link.is_none() && pair.animation.is_some()))
                     && existing_animation.is_empty();
@@ -124,6 +145,16 @@ pub async fn process_upload(args: UploadArgs) -> Result<()> {
                 } else if !existing_image.is_empty() {
                     item.image_hash = pair.image_hash.clone();
                     item.image_link = existing_image;
+                }
+
+                if additional_image_changed {
+                    // triggers the image upload
+                    item.additional_image_hash = pair.additional_image_hash.clone();
+                    item.additional_image_link = String::new();
+                    indices.additional_image.push(*index);
+                } else if !existing_additional_image.is_empty() {
+                    item.additional_image_hash = pair.additional_image_hash.clone();
+                    item.additional_image_link = existing_additional_image;
                 }
 
                 if animation_changed {
@@ -154,6 +185,13 @@ pub async fn process_upload(args: UploadArgs) -> Result<()> {
                 } else {
                     item.image_hash = pair.image_hash.clone();
                     item.image_link = existing_image;
+                }
+
+                if existing_additional_image.is_empty() {
+                    indices.additional_image.push(*index);
+                } else {
+                    item.additional_image_hash = pair.additional_image_hash.clone();
+                    item.additional_image_link = existing_additional_image;
                 }
 
                 // and we might need to upload the animation
@@ -217,6 +255,10 @@ pub async fn process_upload(args: UploadArgs) -> Result<()> {
     );
     println!("+--------------------+");
     println!("| images    | {:>6} |", indices.image.len());
+    println!(
+        "| additional images    | {:>6} |",
+        indices.additional_image.len()
+    );
     println!("| metadata  | {:>6} |", indices.metadata.len());
 
     if !indices.animation.is_empty() {
@@ -235,8 +277,10 @@ pub async fn process_upload(args: UploadArgs) -> Result<()> {
         )));
     }
 
-    let need_upload =
-        !indices.image.is_empty() || !indices.metadata.is_empty() || !indices.animation.is_empty();
+    let need_upload = !indices.image.is_empty()
+        || !indices.additional_image.is_empty()
+        || !indices.metadata.is_empty()
+        || !indices.animation.is_empty();
 
     // ready to upload data
 
@@ -263,6 +307,7 @@ pub async fn process_upload(args: UploadArgs) -> Result<()> {
                 &asset_pairs,
                 vec![
                     (DataType::Image, &indices.image),
+                    (DataType::AdditionalImage, &indices.additional_image),
                     (DataType::Animation, &indices.animation),
                     (DataType::Metadata, &indices.metadata),
                 ],
@@ -304,6 +349,45 @@ pub async fn process_upload(args: UploadArgs) -> Result<()> {
                     let item = cache.items.get(&index.to_string()).unwrap();
 
                     if item.image_link.is_empty() {
+                        // no image link, not ready for metadata upload
+                        indices.metadata.retain(|&x| x != index);
+                    }
+                }
+            }
+        }
+
+        println!(
+            "\n{} {}Uploading additional image files {}",
+            style(format!("[3.5/{}]", total_steps)).bold().dim(),
+            UPLOAD_EMOJI,
+            if indices.additional_image.is_empty() {
+                "(skipping)"
+            } else {
+                ""
+            }
+        );
+
+        if !indices.additional_image.is_empty() {
+            errors.extend(
+                upload_data(
+                    &sugar_config,
+                    &asset_pairs,
+                    &mut cache,
+                    &indices.additional_image,
+                    DataType::AdditionalImage,
+                    storage.borrow(),
+                    args.interrupted.clone(),
+                )
+                .await?,
+            );
+
+            // updates the list of metadata indices since the image upload
+            // might fail - removes any index that the image upload failed
+            if !indices.metadata.is_empty() {
+                for index in indices.additional_image {
+                    let item = cache.items.get(&index.to_string()).unwrap();
+
+                    if item.additional_image_link.is_empty() {
                         // no image link, not ready for metadata upload
                         indices.metadata.retain(|&x| x != index);
                     }
@@ -496,6 +580,7 @@ async fn upload_data(
         // chooses the file path based on the data type
         let file_path = match data_type {
             DataType::Image => item.image.clone(),
+            DataType::AdditionalImage => item.additional_image.clone(),
             DataType::Metadata => item.metadata.clone(),
             DataType::Animation => {
                 if let Some(animation) = item.animation.clone() {
@@ -522,6 +607,7 @@ async fn upload_data(
 
     let content_type = match data_type {
         DataType::Image => format!("image/{}", extension),
+        DataType::AdditionalImage => format!("image/{}", extension),
         DataType::Metadata => "application/json".to_string(),
         DataType::Animation => format!("video/{}", extension),
     };
@@ -550,6 +636,7 @@ async fn upload_data(
             DataType::Metadata => get_updated_metadata(
                 &file_path,
                 &cache_item.image_link,
+                &cache_item.additional_image_link,
                 &cache_item.animation_link,
             )?,
             _ => file_path.clone(),

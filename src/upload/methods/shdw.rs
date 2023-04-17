@@ -130,6 +130,13 @@ impl Prepare for SHDWMethod {
                         total_size += fs::metadata(path)?.len();
                     }
                 }
+                DataType::AdditionalImage => {
+                    for index in indices {
+                        let item = assets.get(index).unwrap();
+                        let path = Path::new(&item.additional_image);
+                        total_size += fs::metadata(path)?.len();
+                    }
+                }
                 DataType::Animation => {
                     for index in indices {
                         let item = assets.get(index).unwrap();
@@ -151,10 +158,14 @@ impl Prepare for SHDWMethod {
                             None
                         };
 
-                        total_size +=
-                            get_updated_metadata(&item.metadata, &mock_uri.clone(), &animation)?
-                                .into_bytes()
-                                .len() as u64;
+                        total_size += get_updated_metadata(
+                            &item.metadata,
+                            &mock_uri.clone(),
+                            &mock_uri.clone(),
+                            &animation,
+                        )?
+                        .into_bytes()
+                        .len() as u64;
                     }
                 }
             }
@@ -182,7 +193,7 @@ impl ParallelUploader for SHDWMethod {
 impl Config {
     async fn send(&self, asset_info: AssetInfo) -> Result<(String, String)> {
         let data = match asset_info.data_type {
-            DataType::Image => fs::read(&asset_info.content)?,
+            DataType::Image | DataType::AdditionalImage => fs::read(&asset_info.content)?,
             DataType::Metadata => asset_info.content.into_bytes(),
             DataType::Animation => fs::read(&asset_info.content)?,
         };

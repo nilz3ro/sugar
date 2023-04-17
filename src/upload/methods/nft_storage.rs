@@ -122,6 +122,10 @@ impl Prepare for NftStorageMethod {
                         let path = Path::new(&item.image);
                         fs::metadata(path)?.len()
                     }
+                    DataType::AdditionalImage => {
+                        let path = Path::new(&item.additional_image);
+                        fs::metadata(path)?.len()
+                    }
                     DataType::Animation => {
                         if let Some(animation) = &item.animation {
                             let path = Path::new(animation);
@@ -138,9 +142,14 @@ impl Prepare for NftStorageMethod {
                             None
                         };
 
-                        get_updated_metadata(&item.metadata, &mock_uri.clone(), &animation)?
-                            .into_bytes()
-                            .len() as u64
+                        get_updated_metadata(
+                            &item.metadata,
+                            &mock_uri.clone(),
+                            &mock_uri.clone(),
+                            &animation,
+                        )?
+                        .into_bytes()
+                        .len() as u64
                     }
                 };
 
@@ -175,7 +184,7 @@ impl Uploader for NftStorageMethod {
 
         for asset_info in assets {
             let size = match data_type {
-                DataType::Image | DataType::Animation => {
+                DataType::Image | DataType::AdditionalImage | DataType::Animation => {
                     let path = Path::new(&asset_info.content);
                     fs::metadata(path)?.len()
                 }
@@ -211,7 +220,9 @@ impl Uploader for NftStorageMethod {
 
             for asset_info in &batch {
                 let data = match asset_info.data_type {
-                    DataType::Image | DataType::Animation => fs::read(&asset_info.content)?,
+                    DataType::Image | DataType::AdditionalImage | DataType::Animation => {
+                        fs::read(&asset_info.content)?
+                    }
                     DataType::Metadata => {
                         let content = String::from(&asset_info.content);
                         content.into_bytes()
@@ -249,6 +260,7 @@ impl Uploader for NftStorageMethod {
 
                     match data_type {
                         DataType::Image => item.image_link = uri,
+                        DataType::AdditionalImage => item.image_link = uri,
                         DataType::Metadata => item.metadata_link = uri,
                         DataType::Animation => item.animation_link = Some(uri),
                     }
